@@ -1,0 +1,16 @@
+import 'Components/Form/FormInputGroup';
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import InteractiveImportModal from 'InteractiveImport/InteractiveImportModal';
+import { setTranslations } from 'Utilities/String/translate';
+import translations from '../../../src/NzbDrone.Core/Localization/Core/en.json';
+
+setTranslations(translations);
+const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+createRoot(document.getElementById('root')!).render(
+  <QueryClientProvider client={client}>
+    <InteractiveImportModal isOpen={true} folder="/fixture" showDelete={true}
+      showFilterExistingFiles={true} onModalClose={() => { document.title = 'closed'; }} />
+  </QueryClientProvider>
+);

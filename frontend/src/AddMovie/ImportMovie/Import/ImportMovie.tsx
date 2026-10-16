@@ -12,6 +12,7 @@ import Alert from 'Components/Alert';
 import LoadingIndicator from 'Components/Loading/LoadingIndicator';
 import PageContent from 'Components/Page/PageContent';
 import PageContentBody from 'Components/Page/PageContentBody';
+import TablePager from 'Components/Table/TablePager';
 import { kinds, sortDirections } from 'Helpers/Props';
 import { SortDirection } from 'Helpers/Props/sortDirections';
 import { useRootFolder } from 'RootFolder/useRootFolders';
@@ -20,14 +21,12 @@ import ImportFile from 'typings/ImportFile';
 import { SelectStateInputProps } from 'typings/props';
 import { ApiError } from 'Utilities/Fetch/fetchJson';
 import translate from 'Utilities/String/translate';
-import selectAll from 'Utilities/Table/selectAll';
-import toggleSelected from 'Utilities/Table/toggleSelected';
 import {
   setAddMovieDefault,
   useAddMovieDefaults,
 } from '../../addMovieDefaultsStore';
 import {
-  IMPORT_ITEM_LIMIT,
+  IMPORT_PAGE_SIZE,
   ImportItem,
   ImportItemType,
   importReducer,
@@ -123,57 +122,132 @@ function ImportMovie({ itemType }: ImportMovieProps) {
 
   const importMutation = useImportMutation(rootFolderId);
 
-  const totalFiles = importFiles.length;
-  const showLimitBanner =
-    rootFoldersPopulated && totalFiles > IMPORT_ITEM_LIMIT;
+  const orderedFiles = useMemo(
+    () =>
+      [...importFiles].sort((a, b) =>
+        a.relativePath.localeCompare(b.relativePath, undefined, {
+          numeric: true,
+          sensitivity: 'base',
+        })
+      ),
+    [importFiles]
+  );
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(
+    1,
+    Math.ceil(importState.items.length / IMPORT_PAGE_SIZE)
+  );
+  const currentPage = Math.min(page, totalPages);
 
   // Initialise items when importFiles become available
-  const initialised = useRef(false);
   useEffect(() => {
-    if (!importFiles.length) {
-      return;
-    }
-    initialised.current = false; // reset so new batch of import files can re-init lookup
+    cancelQueue();
+    setPage(1);
+    setSelectionState({
+      allSelected: false,
+      allUnselected: true,
+      lastToggled: null,
+      selectedState: {},
+    });
     dispatch({
       type: 'INIT_ITEMS',
-      files: importFiles,
+      files: orderedFiles,
       itemType,
       defaults: {
         monitor: defaultMonitor,
         qualityProfileId: defaultQualityProfileId,
       },
     });
-  }, [importFiles, itemType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orderedFiles, itemType, cancelQueue]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Queue initial lookups once items are initialised
+  // The reducer keeps the initial path order, so lookup updates do not need
+  // to sort the entire library again for each response.
+  const sortedItems = useMemo(
+    () =>
+      sortDirection === sortDirections.DESCENDING
+        ? [...importState.items].reverse()
+        : importState.items,
+    [importState.items, sortDirection]
+  );
+  const pageItems = useMemo(
+    () =>
+      sortedItems.slice(
+        (currentPage - 1) * IMPORT_PAGE_SIZE,
+        currentPage * IMPORT_PAGE_SIZE
+      ),
+    [sortedItems, currentPage]
+  );
+  const pageKey = JSON.stringify([
+    rootFolderId,
+    itemType,
+    sortDirection,
+    pageItems.map((item) => item.id),
+  ]);
+
   useEffect(() => {
-    if (initialised.current || !importState.items.length) {
-      return;
-    }
-    initialised.current = true;
-
-    importState.items.forEach((item) => {
-      queueLookup({ id: item.id, term: item.term, itemType: item.itemType });
+    cancelQueue();
+    pageItems.forEach((item) => {
+      if (!item.isPopulated && !item.error) {
+        queueLookup({ id: item.id, term: item.term, itemType: item.itemType });
+      }
     });
-  }, [importState.items, queueLookup]);
+    return cancelQueue;
+    // Restart only when page membership changes, not when its lookup results arrive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageKey, queueLookup, cancelQueue]);
 
-  // Rows land in whatever order the disk scan produced them, so the table is
-  // sorted by relative path — the only column whose value doesn't change as
-  // lookups come back and start shuffling rows around.
-  const sortedItems = useMemo(() => {
-    const sorted = [...importState.items].sort((a: ImportItem, b: ImportItem) =>
-      a.relativePath.localeCompare(b.relativePath, undefined, {
-        numeric: true,
-        sensitivity: 'base',
-      })
+  useEffect(() => {
+    setPage((previous) => Math.min(previous, totalPages));
+  }, [totalPages]);
+
+  // Selection belongs to the complete collection. Unmounting a page must not
+  // remove its selections or make a previously unchecked match selected again.
+  const previousItems = useRef(new Map<string, ImportItem>());
+  useEffect(() => {
+    const previous = previousItems.current;
+    previousItems.current = new Map(
+      importState.items.map((item) => [item.id, item])
     );
+    setSelectionState((state) => {
+      const selectedState: Record<string, boolean> = {};
+      let changed =
+        Object.keys(state.selectedState).length !== importState.items.length;
+      importState.items.forEach((item) => {
+        const old = previous.get(item.id);
+        const newMatch = item.selectedMovie !== old?.selectedMovie;
+        let isSelected = state.selectedState[item.id] ?? false;
+        if (!item.selectedMovie) {
+          isSelected = false;
+        } else if (newMatch) {
+          isSelected = !item.selectedMovie.isExisting;
+        }
+        selectedState[item.id] = isSelected;
+        changed ||= selectedState[item.id] !== state.selectedState[item.id];
+      });
+      return changed ? { ...state, selectedState } : state;
+    });
+  }, [importState.items]);
 
-    return sortDirection === sortDirections.DESCENDING
-      ? sorted.reverse()
-      : sorted;
-  }, [importState.items, sortDirection]);
+  const allSelected =
+    pageItems.length > 0 &&
+    pageItems.every((item) => selectionState.selectedState[item.id]);
+  const allUnselected = pageItems.every(
+    (item) => !selectionState.selectedState[item.id]
+  );
+  const changePage = useCallback((value: number) => setPage(value), []);
+  const onFirstPagePress = useCallback(() => setPage(1), []);
+  const onPreviousPagePress = useCallback(
+    () => setPage(currentPage - 1),
+    [currentPage]
+  );
+  const onNextPagePress = useCallback(
+    () => setPage(currentPage + 1),
+    [currentPage]
+  );
+  const onLastPagePress = useCallback(() => setPage(totalPages), [totalPages]);
 
   const onSortPress = useCallback(() => {
+    setPage(1);
     setSortDirection((prev) =>
       prev === sortDirections.ASCENDING
         ? sortDirections.DESCENDING
@@ -181,36 +255,39 @@ function ImportMovie({ itemType }: ImportMovieProps) {
     );
   }, []);
 
-  const onSelectAllChange = useCallback(({ value }: { value: boolean }) => {
-    setSelectionState(
-      (prev) => selectAll(prev.selectedState, value) as SelectionState
-    );
-  }, []);
+  const onSelectAllChange = useCallback(
+    ({ value }: { value: boolean }) => {
+      setSelectionState((previous) => {
+        const selectedState = { ...previous.selectedState };
+        pageItems.forEach((item) => {
+          selectedState[item.id] = value && !!item.selectedMovie;
+        });
+        return { ...previous, selectedState, lastToggled: null };
+      });
+    },
+    [pageItems]
+  );
 
   const onSelectedChange = useCallback(
     ({ id, value, shiftKey }: SelectStateInputProps) => {
-      setSelectionState(
-        (prev) =>
-          toggleSelected(
-            prev,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            sortedItems as unknown as any[],
-            String(id),
-            value ?? false,
-            shiftKey
-          ) as SelectionState
-      );
+      setSelectionState((previous) => {
+        const selectedState = { ...previous.selectedState, [id]: !!value };
+        const start = pageItems.findIndex(
+          (item) => item.id === previous.lastToggled
+        );
+        const end = pageItems.findIndex((item) => item.id === String(id));
+        if (shiftKey && start >= 0 && end >= 0) {
+          pageItems
+            .slice(Math.min(start, end), Math.max(start, end) + 1)
+            .forEach((item) => {
+              selectedState[item.id] = !!value && !!item.selectedMovie;
+            });
+        }
+        return { ...previous, selectedState, lastToggled: String(id) };
+      });
     },
-    [sortedItems]
+    [pageItems]
   );
-
-  const onRemoveSelectedStateItem = useCallback((id: string) => {
-    setSelectionState((prev) => {
-      const selectedState = { ...prev.selectedState };
-      delete selectedState[id];
-      return { ...prev, selectedState };
-    });
-  }, []);
 
   const onLookup = useCallback(
     (opts: {
@@ -260,9 +337,9 @@ function ImportMovie({ itemType }: ImportMovieProps) {
   );
 
   const onImportPress = useCallback(async () => {
-    const selectedIds = getSelectedIds(selectionState.selectedState);
+    const selectedIds = new Set(getSelectedIds(selectionState.selectedState));
     const selectedItems = importState.items.filter((item) =>
-      selectedIds.includes(item.id)
+      selectedIds.has(item.id)
     );
 
     const body = buildImportBody(selectedItems);
@@ -296,14 +373,17 @@ function ImportMovie({ itemType }: ImportMovieProps) {
   }, [importMutation, importState.items, selectionState.selectedState]);
 
   const onLookupUnsearched = useCallback(() => {
-    lookupUnsearched(importState.items);
-  }, [importState.items, lookupUnsearched]);
+    lookupUnsearched(pageItems);
+  }, [pageItems, lookupUnsearched]);
 
   const onCancelLookup = useCallback(() => {
     cancelQueue();
   }, [cancelQueue]);
 
-  const selectedIds = getSelectedIds(selectionState.selectedState);
+  const selectedIds = useMemo(
+    () => getSelectedIds(selectionState.selectedState),
+    [selectionState.selectedState]
+  );
 
   let titleKey = 'ImportLibrary';
 
@@ -336,30 +416,20 @@ function ImportMovie({ itemType }: ImportMovieProps) {
           </Alert>
         ) : null}
 
-        {showLimitBanner ? (
-          <Alert kind={kinds.WARNING}>
-            {translate('ImportMovieLimitBanner', {
-              limit: IMPORT_ITEM_LIMIT,
-              total: totalFiles,
-            })}
-          </Alert>
-        ) : null}
-
         {!rootFoldersError &&
         !rootFoldersFetching &&
         rootFoldersPopulated &&
         !!importFiles.length ? (
           <ImportMovieTable
-            items={sortedItems}
+            items={pageItems}
             isLookingUp={isLookingUp}
-            allSelected={selectionState.allSelected}
-            allUnselected={selectionState.allUnselected}
+            allSelected={allSelected}
+            allUnselected={allUnselected}
             selectedState={selectionState.selectedState}
             sortDirection={sortDirection}
             onSortPress={onSortPress}
             onSelectAllChange={onSelectAllChange}
             onSelectedChange={onSelectedChange}
-            onRemoveSelectedStateItem={onRemoveSelectedStateItem}
             onLookup={onLookup}
             onMovieSelect={onMovieSelect}
             onItemValueChange={onItemValueChange}
@@ -367,9 +437,25 @@ function ImportMovie({ itemType }: ImportMovieProps) {
         ) : null}
       </PageContentBody>
 
+      {!rootFoldersError &&
+      !rootFoldersFetching &&
+      !!importState.items.length ? (
+        <TablePager
+          page={currentPage}
+          totalPages={totalPages}
+          totalRecords={importState.items.length}
+          onFirstPagePress={onFirstPagePress}
+          onPreviousPagePress={onPreviousPagePress}
+          onNextPagePress={onNextPagePress}
+          onLastPagePress={onLastPagePress}
+          onPageSelect={changePage}
+        />
+      ) : null}
+
       {!rootFoldersError && !rootFoldersFetching && !!importFiles.length ? (
         <ImportMovieFooter
           items={importState.items}
+          lookupItems={pageItems}
           selectedIds={selectedIds}
           defaultMonitor={defaultMonitor}
           defaultQualityProfileId={defaultQualityProfileId}

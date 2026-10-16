@@ -36,6 +36,7 @@ export const useSortedRootFolders = () => {
 export const useRootFolder = (id: number) => {
   return useApiQuery<RootFolder>({
     path: `/rootFolder/${id}`,
+    queryOptions: { placeholderData: undefined, refetchOnWindowFocus: false },
   });
 };
 

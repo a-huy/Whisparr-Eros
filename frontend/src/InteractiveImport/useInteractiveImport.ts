@@ -67,6 +67,7 @@ export default function useInteractiveImport(params: InteractiveImportParams) {
       // The list is only meaningful while the modal is open, and a stale one
       // would be handed straight back the next time it opens.
       gcTime: 0,
+      placeholderData: undefined,
       refetchOnWindowFocus: false,
     },
   });

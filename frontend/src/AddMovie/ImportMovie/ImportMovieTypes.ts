@@ -65,6 +65,7 @@ export type ImportAction =
       defaults: { monitor: string; qualityProfileId: number };
     }
   | { type: 'SET_ITEM_FETCHING'; id: string }
+  | { type: 'CANCEL_LOOKUPS' }
   | {
       type: 'SET_LOOKUP_RESULTS';
       id: string;
@@ -87,7 +88,7 @@ export interface ImportState {
   items: ImportItem[];
 }
 
-export const IMPORT_ITEM_LIMIT = 500;
+export const IMPORT_PAGE_SIZE = 50;
 
 export function importReducer(
   state: ImportState,
@@ -95,11 +96,10 @@ export function importReducer(
 ): ImportState {
   switch (action.type) {
     case 'INIT_ITEMS': {
-      const sliced = action.files.slice(0, IMPORT_ITEM_LIMIT);
       return {
         isLookingUp: false,
-        items: sliced.map((f) => ({
-          id: f.name,
+        items: action.files.map((f) => ({
+          id: f.path,
           path: f.path,
           relativePath: f.relativePath,
           term: f.name,
@@ -115,6 +115,17 @@ export function importReducer(
         })),
       };
     }
+
+    case 'CANCEL_LOOKUPS':
+      return {
+        ...state,
+        isLookingUp: false,
+        items: state.items.map((item) =>
+          item.isFetching || item.isQueued
+            ? { ...item, isFetching: false, isQueued: false }
+            : item
+        ),
+      };
 
     case 'SET_ITEM_FETCHING':
       return {

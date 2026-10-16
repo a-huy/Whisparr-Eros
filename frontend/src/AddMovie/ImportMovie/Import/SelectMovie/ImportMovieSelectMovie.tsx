@@ -50,7 +50,7 @@ function ImportMovieSelectMovie({
   const buttonId = `${uid}-button`;
   const contentId = `${uid}-content`;
 
-  const [term, setTerm] = useState(id);
+  const [term, setTerm] = useState(item.term);
   const [isOpen, setIsOpen] = useState(false);
 
   const scheduleUpdateRef = useRef<(() => void) | null>(null);
@@ -77,6 +77,16 @@ function ImportMovieSelectMovie({
       }
     },
     [buttonId, contentId]
+  );
+
+  useEffect(
+    () => () => {
+      if (lookupTimeoutRef.current) {
+        clearTimeout(lookupTimeoutRef.current);
+      }
+      globalThis.removeEventListener('click', handleWindowClick);
+    },
+    [handleWindowClick]
   );
 
   const onPress = useCallback(() => {
