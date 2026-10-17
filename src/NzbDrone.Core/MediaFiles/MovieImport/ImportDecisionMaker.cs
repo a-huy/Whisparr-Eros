@@ -23,6 +23,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport
         List<ImportDecision> GetImportDecisions(List<string> videoFiles, Movie movie, bool filterExistingFiles);
         List<ImportDecision> GetImportDecisions(List<string> videoFiles, Movie movie, DownloadClientItem downloadClientItem, ParsedMovieInfo folderInfo, bool sceneSource);
         List<ImportDecision> GetImportDecisions(List<string> videoFiles, Movie movie, DownloadClientItem downloadClientItem, ParsedMovieInfo folderInfo, bool sceneSource, bool filterExistingFiles);
+        List<ImportDecision> GetImportDecisionsForPage(List<string> videoFiles, List<string> contextFiles, Movie movie, DownloadClientItem downloadClientItem, ParsedMovieInfo folderInfo, bool sceneSource);
         ImportDecision GetDecision(LocalMovie localMovie, DownloadClientItem downloadClientItem);
     }
 
@@ -92,8 +93,11 @@ namespace NzbDrone.Core.MediaFiles.MovieImport
         {
             var newFiles = filterExistingFiles ? _mediaFileService.FilterExistingFiles(videoFiles.ToList(), movie) : videoFiles.ToList();
 
-            _logger.Debug("Analyzing {0}/{1} files.", newFiles.Count, videoFiles.Count);
+            return GetImportDecisionsForPage(newFiles, newFiles, movie, downloadClientItem, folderInfo, sceneSource);
+        }
 
+        public List<ImportDecision> GetImportDecisionsForPage(List<string> videoFiles, List<string> contextFiles, Movie movie, DownloadClientItem downloadClientItem, ParsedMovieInfo folderInfo, bool sceneSource)
+        {
             ParsedMovieInfo downloadClientItemInfo = null;
 
             if (downloadClientItem != null)
@@ -101,11 +105,11 @@ namespace NzbDrone.Core.MediaFiles.MovieImport
                 downloadClientItemInfo = Parser.Parser.ParseMovieTitle(downloadClientItem.Title);
             }
 
-            var nonSampleVideoFileCount = GetNonSampleVideoFileCount(newFiles, movie.MovieMetadata);
+            var nonSampleVideoFileCount = GetNonSampleVideoFileCount(contextFiles, movie.MovieMetadata);
 
             var decisions = new List<ImportDecision>();
 
-            foreach (var file in newFiles)
+            foreach (var file in videoFiles)
             {
                 var localMovie = new LocalMovie
                 {
@@ -359,7 +363,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport
 
         private int GetNonSampleVideoFileCount(List<string> videoFiles, MovieMetadata movie)
         {
-            return videoFiles.Count(file =>
+            return videoFiles.Where(file =>
             {
                 var sample = _detectSample.IsSample(movie, file);
 
@@ -369,7 +373,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport
                 }
 
                 return true;
-            });
+            }).Take(2).Count();
         }
     }
 }

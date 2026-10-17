@@ -209,13 +209,24 @@ function InteractiveImportModalContent(
     initialFilterExistingFiles
   );
 
-  const { items, originalItems, isFetching, isFetched, error, updateItems } =
-    useInteractiveImport({
-      downloadId,
-      movieId,
-      folder,
-      filterExistingFiles,
-    });
+  const [page, setPage] = useState(1);
+  const {
+    items,
+    pageItems,
+    totalRecords,
+    originalItems,
+    isFetching,
+    isFetched,
+    error,
+    updateItems,
+  } = useInteractiveImport({
+    downloadId,
+    movieId,
+    folder,
+    filterExistingFiles,
+    page,
+    pageSize: PAGE_SIZE,
+  });
 
   const { mutate: deleteMovieFilesMutate, isPending: isDeleting } =
     useDeleteMovieFiles();
@@ -228,12 +239,8 @@ function InteractiveImportModalContent(
     useState(false);
   const [interactiveImportErrorMessage, setInteractiveImportErrorMessage] =
     useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pageItems = useMemo(() => {
-    return items.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  }, [items, currentPage]);
+  const totalPages = Math.max(1, Math.ceil(totalRecords / PAGE_SIZE));
+  const currentPage = page;
   const { selectedState, selectPage, selectRow } = useImportSelection(
     items,
     pageItems,
@@ -244,8 +251,17 @@ function InteractiveImportModalContent(
   const allUnselected = pageItems.every((item) => !selectedState[item.id]);
   const executeCommand = useExecuteCommand();
 
+  useEffect(() => {
+    if (!['relativePath', 'size'].includes(sortKey)) {
+      setInteractiveImportSort({ sortKey: 'relativePath', sortDirection });
+    }
+  }, [sortKey, sortDirection]);
+
   const columns: Column[] = useMemo(() => {
-    const result: Column[] = cloneDeep(COLUMNS);
+    const result: Column[] = cloneDeep(COLUMNS).map((column) => ({
+      ...column,
+      isSortable: column.name === 'relativePath' || column.name === 'size',
+    }));
 
     if (!showMovie) {
       const movieColumn = result.find((c) => c.name === 'movie');
@@ -298,8 +314,10 @@ function InteractiveImportModalContent(
   ]);
 
   useEffect(() => {
-    setPage((previous) => Math.min(previous, totalPages));
-  }, [totalPages]);
+    if (!isFetching && !error && isFetched) {
+      setPage((previous) => Math.min(previous, totalPages));
+    }
+  }, [totalPages, isFetching, error, isFetched]);
 
   const bulkSelectOptions = useMemo(() => {
     const options: SelectInputOption[] = [
@@ -516,11 +534,13 @@ function InteractiveImportModalContent(
   ]);
 
   const onSortPress = useCallback<SortCallback>((sortKey, sortDirection) => {
+    setPage(1);
     setInteractiveImportSort({ sortKey, sortDirection });
   }, []);
 
   const onFilterExistingFilesChange = useCallback(
     (value: string | undefined) => {
+      setPage(1);
       setFilterExistingFiles(value !== 'all');
     },
     []
@@ -680,7 +700,7 @@ function InteractiveImportModalContent(
         <TablePager
           page={currentPage}
           totalPages={totalPages}
-          totalRecords={items.length}
+          totalRecords={totalRecords}
           onFirstPagePress={onFirstPagePress}
           onPreviousPagePress={onPreviousPagePress}
           onNextPagePress={onNextPagePress}

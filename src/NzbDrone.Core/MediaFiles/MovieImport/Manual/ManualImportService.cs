@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NLog;
+using NzbDrone.Common;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Instrumentation.Extensions;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.CustomFormats;
+using NzbDrone.Core.Datastore;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.TrackedDownloads;
 using NzbDrone.Core.Languages;
@@ -27,6 +29,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
     {
         List<ManualImportItem> GetMediaFiles(int movieId);
         List<ManualImportItem> GetMediaFiles(string path, string downloadId, int? movieId, bool filterExistingFiles);
+        PagingSpec<ManualImportItem> GetMediaFilesPage(string path, string downloadId, int? movieId, bool filterExistingFiles, PagingSpec<ManualImportItem> pagingSpec);
         ManualImportItem ReprocessItem(string path, string downloadId, int movieId, string releaseGroup, QualityModel quality, List<Language> languages, int indexerFlags);
     }
 
@@ -86,17 +89,28 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
 
         public List<ManualImportItem> GetMediaFiles(int movieId)
         {
+            return GetMovieCandidates(movieId).Select(candidate => candidate.Analyze()).ToList();
+        }
+
+        private List<ImportCandidate> GetMovieCandidates(int movieId)
+        {
             var movie = _movieService.GetMovie(movieId);
             var directoryInfo = new DirectoryInfo(movie.Path);
             var movieFiles = _mediaFileService.GetFilesByMovie(movieId);
 
-            var items = movieFiles.Select(movieFile => MapItem(movieFile, movie, directoryInfo.Name)).ToList();
+            var items = movieFiles.Select(movieFile => new ImportCandidate
+            {
+                Path = Path.Combine(movie.Path, movieFile.RelativePath),
+                Analyze = () => MapItem(movieFile, movie, directoryInfo.Name)
+            }).ToList();
 
             var mediaFiles = _diskScanService.FilterPaths(movie.Path, _diskScanService.GetVideoFiles(movie.Path)).ToList();
             var unmappedFiles = MediaFileService.FilterExistingFiles(mediaFiles, movieFiles, movie);
 
-            items.AddRange(unmappedFiles.Select(file =>
-                new ManualImportItem
+            items.AddRange(unmappedFiles.Select(file => new ImportCandidate
+            {
+                Path = Path.Combine(movie.Path, file),
+                Analyze = () => new ManualImportItem
                 {
                     Path = Path.Combine(movie.Path, file),
                     FolderName = directoryInfo.Name,
@@ -108,7 +122,8 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
                     Languages = new List<Language> { Language.Unknown },
                     Size = _diskProvider.GetFileSize(file),
                     Rejections = Enumerable.Empty<ImportRejection>()
-                }));
+                }
+            }));
 
             return items;
         }
@@ -139,6 +154,117 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
             }
 
             return ProcessFolder(path, path, downloadId, movieId, filterExistingFiles);
+        }
+
+        private sealed class ImportCandidate
+        {
+            public string Path { get; set; }
+            public Func<ManualImportItem> Analyze { get; set; }
+        }
+
+        public PagingSpec<ManualImportItem> GetMediaFilesPage(string path, string downloadId, int? movieId, bool filterExistingFiles, PagingSpec<ManualImportItem> pagingSpec)
+        {
+            var requestedPaths = new HashSet<string>(PathEqualityComparer.Instance);
+            List<ImportCandidate> candidates;
+            if (movieId.HasValue && downloadId.IsNullOrWhiteSpace())
+            {
+                // Library file rows already have metadata; they need no import analysis.
+                candidates = GetMovieCandidates(movieId.Value);
+            }
+            else
+            {
+                if (downloadId.IsNotNullOrWhiteSpace())
+                {
+                    path = _trackedDownloadService.Find(downloadId)?.ImportItem.OutputPath.FullPath;
+                }
+
+                candidates = new List<ImportCandidate>();
+                if (path.IsNotNullOrWhiteSpace() && _diskProvider.FolderExists(path))
+                {
+                    candidates = GetCandidates(path, path, downloadId, movieId, filterExistingFiles, requestedPaths).ToList();
+                }
+                else if (path.IsNotNullOrWhiteSpace() && _diskProvider.FileExists(path))
+                {
+                    var parent = Path.GetDirectoryName(path);
+                    candidates.Add(new ImportCandidate { Path = path, Analyze = () => ProcessFile(parent, parent, path, downloadId) });
+                }
+            }
+
+            // Use the complete path as a deterministic tiebreaker, including duplicate basenames.
+            IEnumerable<ImportCandidate> ordered = pagingSpec.SortKey == "size"
+                ? pagingSpec.SortDirection == SortDirection.Descending
+                    ? candidates.OrderByDescending(file => _diskProvider.GetFileSize(file.Path)).ThenBy(file => file.Path, StringComparer.Ordinal)
+                    : candidates.OrderBy(file => _diskProvider.GetFileSize(file.Path)).ThenBy(file => file.Path, StringComparer.Ordinal)
+                : pagingSpec.SortDirection == SortDirection.Descending
+                    ? candidates.OrderByDescending(file => file.Path, StringComparer.OrdinalIgnoreCase).ThenBy(file => file.Path, StringComparer.Ordinal)
+                    : candidates.OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase).ThenBy(file => file.Path, StringComparer.Ordinal);
+
+            pagingSpec.TotalRecords = candidates.Count;
+            var page = ordered.Skip((pagingSpec.Page - 1) * pagingSpec.PageSize).Take(pagingSpec.PageSize).ToList();
+            requestedPaths.UnionWith(page.Select(file => file.Path));
+            pagingSpec.Records = page.Select(file => file.Analyze()).Where(item => item != null).ToList();
+            return pagingSpec;
+        }
+
+        private IEnumerable<ImportCandidate> GetCandidates(string rootFolder, string baseFolder, string downloadId, int? movieId, bool filterExistingFiles, HashSet<string> requestedPaths)
+        {
+            var directoryName = new DirectoryInfo(baseFolder).Name;
+            var movie = movieId.HasValue ? _movieService.GetMovie(movieId.Value) : null;
+            if (movie == null && !_diskScanService.FilterPaths(rootFolder, _diskProvider.GetDirectories(baseFolder)).Any())
+            {
+                try
+                {
+                    movie = _parsingService.GetMovie(directoryName);
+                    if (movie != null && movie.Title.CleanStudioTitle().Equals(directoryName.CleanStudioTitle()) && _studioService.FindAllByTitle(movie.Title).Any())
+                    {
+                        movie = null;
+                    }
+                }
+                catch (MultipleMoviesFoundException ex)
+                {
+                    _logger.Warn(ex, "Unable to match movie by title");
+                }
+            }
+
+            var trackedDownload = GetTrackedDownload(downloadId);
+            movie ??= trackedDownload?.RemoteMovie?.Movie;
+            if (movie != null)
+            {
+                var files = _diskScanService.FilterPaths(rootFolder, _diskScanService.GetVideoFiles(baseFolder));
+                if (filterExistingFiles)
+                {
+                    files = _mediaFileService.FilterExistingFiles(files, movie);
+                }
+
+                var folderInfo = Parser.Parser.ParseMovieTitle(directoryName);
+                var results = new Lazy<Dictionary<string, ManualImportItem>>(() =>
+                    _importDecisionMaker.GetImportDecisionsForPage(files.Where(requestedPaths.Contains).ToList(), files, movie, trackedDownload?.DownloadItem, folderInfo, SceneSource(movie, baseFolder))
+                        .Select(decision => MapItem(decision, rootFolder, downloadId, directoryName)).ToDictionary(item => item.Path, PathEqualityComparer.Instance));
+                foreach (var file in files)
+                {
+                    yield return new ImportCandidate
+                    {
+                        Path = file,
+                        Analyze = () => results.Value.GetValueOrDefault(file)
+                    };
+                }
+
+                yield break;
+            }
+
+            // No per-folder cutoff: only the requested page is ever analyzed.
+            foreach (var file in _diskScanService.FilterPaths(rootFolder, _diskScanService.GetVideoFiles(baseFolder, false)))
+            {
+                yield return new ImportCandidate { Path = file, Analyze = () => ProcessFile(rootFolder, baseFolder, file, downloadId) };
+            }
+
+            foreach (var folder in _diskScanService.FilterPaths(rootFolder, _diskProvider.GetDirectories(baseFolder)))
+            {
+                foreach (var candidate in GetCandidates(rootFolder, folder, downloadId, null, filterExistingFiles, requestedPaths))
+                {
+                    yield return candidate;
+                }
+            }
         }
 
         public ManualImportItem ReprocessItem(string path, string downloadId, int movieId, string releaseGroup, QualityModel quality, List<Language> languages, int indexerFlags)

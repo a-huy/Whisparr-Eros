@@ -102,16 +102,21 @@ function InteractiveImportRow(props: InteractiveImportRowProps) {
     [movieFileId, onSelectedChange]
   );
 
-  const selectRowAfterChange = useCallback(() => {
-    if (!isSelected) {
-      onSelectedChange({
-        id,
-        hasMovieFileId: !!movieFileId,
-        value: true,
-        shiftKey: false,
-      });
-    }
-  }, [id, movieFileId, isSelected, onSelectedChange]);
+  const selectRowAfterChange = useCallback(
+    (movieChosen = false) => {
+      const canAutoSelect =
+        movie && movie.itemType !== 'scene' && !rejections.length;
+      if (!isSelected && (movieChosen || canAutoSelect)) {
+        onSelectedChange({
+          id,
+          hasMovieFileId: !!movieFileId,
+          value: true,
+          shiftKey: false,
+        });
+      }
+    },
+    [id, movie, rejections.length, movieFileId, isSelected, onSelectedChange]
+  );
 
   const onSelectModalClose = useCallback(() => {
     setSelectModalOpen(null);
@@ -126,7 +131,7 @@ function InteractiveImportRow(props: InteractiveImportRowProps) {
       onItemChange(id, { movie });
 
       setSelectModalOpen(null);
-      selectRowAfterChange();
+      selectRowAfterChange(true);
     },
     [id, onItemChange, setSelectModalOpen, selectRowAfterChange]
   );

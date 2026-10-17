@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import fetchJson from 'Utilities/Fetch/fetchJson';
 import getQueryPath from 'Utilities/Fetch/getQueryPath';
+import getAutomaticSceneMatch, {
+  getSceneLookupTerm,
+} from 'Utilities/Import/getAutomaticSceneMatch';
 import {
   ImportAction,
   ImportItemType,
@@ -40,7 +43,7 @@ function useImportLookupQueue(dispatch: React.Dispatch<ImportAction>) {
         params.set('itemType', entry.itemType);
       }
       try {
-        const results = await fetchJson<MovieLookupResult[], never>({
+        let results = await fetchJson<MovieLookupResult[], never>({
           path: getQueryPath(`/movie/lookup?${params.toString()}`),
           method: 'GET',
           headers: {
@@ -48,7 +51,35 @@ function useImportLookupQueue(dispatch: React.Dispatch<ImportAction>) {
             'X-Whisparr-Client': 'Whisparr',
           },
           signal: controller.signal,
+          timeout: 30000,
         });
+        const fallbackTerm =
+          entry.itemType === 'movie' ? null : getSceneLookupTerm(entry.term);
+        if (
+          generation === generationRef.current &&
+          fallbackTerm &&
+          !getAutomaticSceneMatch(entry.term, results)
+        ) {
+          const fallbackParams = new URLSearchParams({
+            term: fallbackTerm,
+            itemType: 'scene',
+          });
+          const fallback = await fetchJson<MovieLookupResult[], never>({
+            path: getQueryPath(`/movie/lookup?${fallbackParams.toString()}`),
+            method: 'GET',
+            headers: {
+              'X-Api-Key': globalThis.Whisparr.apiKey,
+              'X-Whisparr-Client': 'Whisparr',
+            },
+            signal: controller.signal,
+            timeout: 30000,
+          });
+          results = Array.from(
+            new Map(
+              [...results, ...fallback].map((item) => [item.foreignId, item])
+            ).values()
+          );
+        }
         if (generation === generationRef.current) {
           dispatch({ type: 'SET_LOOKUP_RESULTS', id: entry.id, results });
         }

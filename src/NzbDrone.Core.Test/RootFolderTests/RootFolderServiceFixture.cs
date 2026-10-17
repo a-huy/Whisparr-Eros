@@ -39,6 +39,21 @@ namespace NzbDrone.Core.Test.RootFolderTests
                   .Returns(_namingConfig);
         }
 
+        [Test]
+        public void should_return_a_count_without_loading_files_for_summary_requests()
+        {
+            Mocker.GetMock<IRootFolderRepository>().Setup(repository => repository.Get(1))
+                .Returns(new RootFolder { Id = 1, Path = "/fixture" });
+            Mocker.GetMock<IImportFileRepository>().Setup(repository => repository.Count(It.IsAny<System.Linq.Expressions.Expression<System.Func<ImportFile, bool>>>()))
+                .Returns(10001);
+
+            var result = Subject.Get(1, false);
+
+            Assert.That(result.ImportFileCount, Is.EqualTo(10001));
+            Assert.That(result.ImportFiles, Is.Null);
+            Mocker.GetMock<IImportFileRepository>().Verify(repository => repository.FindByRootFolderId(It.IsAny<int>()), Times.Never());
+        }
+
         private void WithNonExistingFolder()
         {
             Mocker.GetMock<IDiskProvider>()

@@ -130,6 +130,12 @@ function ImportMovieSelectMovie({
   );
 
   const errorMessage = error instanceof Error ? error.message : undefined;
+  // A frontend overlay can run against the pinned backend's older dictionary.
+  const translatedReviewLabel = translate('ImportMatchNeedsReview');
+  const reviewLabel =
+    translatedReviewLabel === 'ImportMatchNeedsReview'
+      ? 'Review match'
+      : translatedReviewLabel;
 
   return (
     <Manager>
@@ -164,7 +170,7 @@ function ImportMovieSelectMovie({
                     name={icons.WARNING}
                     kind={kinds.WARNING}
                   />
-                  {translate('NoMatchFound')}
+                  {items.length ? reviewLabel : translate('NoMatchFound')}
                 </div>
               ) : null}
 

@@ -1,4 +1,5 @@
 import { QualityModel } from 'Quality/Quality';
+import getAutomaticSceneMatch from 'Utilities/Import/getAutomaticSceneMatch';
 
 export interface ImportFile {
   name: string;
@@ -16,6 +17,7 @@ export type ImportItemType = 'movie' | 'scene';
 // those fall back to performerNames.
 export interface ImportCredit {
   personName?: string;
+  type?: string;
   performer?: {
     name?: string;
     gender?: string;
@@ -34,6 +36,7 @@ export interface MovieLookupResult {
   performerNames?: string[];
   searchCredits?: ImportCredit[];
   isExisting: boolean;
+  isExcluded?: boolean;
   // Only populated for results already in the library, so the import table can say
   // whether the entry is still missing its file or which quality it already holds.
   hasFile?: boolean;
@@ -53,13 +56,14 @@ export interface ImportItem {
   error: Error | null;
   items: MovieLookupResult[];
   selectedMovie: MovieLookupResult | null;
+  matchManuallySelected: boolean;
   monitor: string;
   qualityProfileId: number;
 }
 
 export type ImportAction =
   | {
-      type: 'INIT_ITEMS';
+      type: 'INIT_ITEMS' | 'MERGE_ITEMS';
       files: ImportFile[];
       itemType?: ImportItemType;
       defaults: { monitor: string; qualityProfileId: number };
@@ -81,6 +85,7 @@ export type ImportAction =
     }
   | { type: 'SET_QUEUED'; id: string; queued: boolean }
   | { type: 'REMOVE_ITEM'; id: string }
+  | { type: 'REMOVE_ITEMS'; ids: string[] }
   | { type: 'SET_LOOKING_UP'; value: boolean };
 
 export interface ImportState {
@@ -95,24 +100,33 @@ export function importReducer(
   action: ImportAction
 ): ImportState {
   switch (action.type) {
-    case 'INIT_ITEMS': {
+    case 'INIT_ITEMS':
+    case 'MERGE_ITEMS': {
+      const existing = action.type === 'MERGE_ITEMS' ? state.items : [];
+      const known = new Set(existing.map((item) => item.id));
       return {
         isLookingUp: false,
-        items: action.files.map((f) => ({
-          id: f.path,
-          path: f.path,
-          relativePath: f.relativePath,
-          term: f.name,
-          itemType: action.itemType,
-          isFetching: false,
-          isPopulated: false,
-          isQueued: false,
-          error: null,
-          items: [],
-          selectedMovie: null,
-          monitor: action.defaults.monitor,
-          qualityProfileId: action.defaults.qualityProfileId,
-        })),
+        items: [
+          ...existing,
+          ...action.files
+            .filter((f) => !known.has(f.path))
+            .map((f) => ({
+              id: f.path,
+              path: f.path,
+              relativePath: f.relativePath,
+              term: f.name,
+              itemType: action.itemType,
+              isFetching: false,
+              isPopulated: false,
+              isQueued: false,
+              error: null,
+              items: [],
+              selectedMovie: null,
+              matchManuallySelected: false,
+              monitor: action.defaults.monitor,
+              qualityProfileId: action.defaults.qualityProfileId,
+            })),
+        ],
       };
     }
 
@@ -142,7 +156,15 @@ export function importReducer(
           if (item.id !== action.id) {
             return item;
           }
-          const selectedMovie = item.selectedMovie ?? action.results[0] ?? null;
+          const isSceneLookup =
+            item.itemType === 'scene' ||
+            action.results.some((result) => result.itemType === 'scene');
+          let selectedMovie = item.selectedMovie;
+          if (!item.matchManuallySelected) {
+            selectedMovie = isSceneLookup
+              ? getAutomaticSceneMatch(item.term, action.results)
+              : (item.selectedMovie ?? action.results[0] ?? null);
+          }
           return {
             ...item,
             isFetching: false,
@@ -166,6 +188,9 @@ export function importReducer(
                 isPopulated: false,
                 isQueued: false,
                 error: action.error,
+                selectedMovie: item.matchManuallySelected
+                  ? item.selectedMovie
+                  : null,
               }
             : item
         ),
@@ -176,7 +201,11 @@ export function importReducer(
         ...state,
         items: state.items.map((item) =>
           item.id === action.id
-            ? { ...item, selectedMovie: action.movie }
+            ? {
+                ...item,
+                selectedMovie: action.movie,
+                matchManuallySelected: true,
+              }
             : item
         ),
       };
@@ -196,6 +225,14 @@ export function importReducer(
           item.id === action.id ? { ...item, isQueued: action.queued } : item
         ),
       };
+
+    case 'REMOVE_ITEMS': {
+      const removed = new Set(action.ids);
+      return {
+        ...state,
+        items: state.items.filter((item) => !removed.has(item.id)),
+      };
+    }
 
     case 'REMOVE_ITEM':
       return {

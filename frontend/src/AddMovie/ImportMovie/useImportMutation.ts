@@ -1,6 +1,5 @@
 import useApiMutation from 'Helpers/Hooks/useApiMutation';
 import useQueryClient from 'Helpers/Hooks/useQueryClient';
-import { useRefreshRootFolder } from 'RootFolder/useRootFolders';
 import { ImportItem, MovieLookupResult } from './ImportMovieTypes';
 
 interface ImportMovieBody extends MovieLookupResult {
@@ -38,9 +37,8 @@ function buildImportBody(items: ImportItem[]): ImportMovieBody[] {
   }, []);
 }
 
-function useImportMutation(rootFolderId: number) {
+function useImportMutation() {
   const queryClient = useQueryClient();
-  const { refreshRootFolder } = useRefreshRootFolder();
 
   return useApiMutation<unknown, ImportMovieBody[]>({
     method: 'POST',
@@ -49,7 +47,6 @@ function useImportMutation(rootFolderId: number) {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['/movie/paged'] });
         queryClient.invalidateQueries({ queryKey: ['/movie/stats'] });
-        refreshRootFolder({ id: rootFolderId });
       },
     },
   });

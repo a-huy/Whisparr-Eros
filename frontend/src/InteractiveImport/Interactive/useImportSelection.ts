@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import InteractiveImport from 'InteractiveImport/InteractiveImport';
+import getAutomaticSceneMatch from 'Utilities/Import/getAutomaticSceneMatch';
 
 export default function useImportSelection(
   items: readonly InteractiveImport[],
@@ -11,6 +12,7 @@ export default function useImportSelection(
     {}
   );
   const lastToggled = useRef<number | null>(null);
+  const explicitSelections = useRef(new Set<number>());
   const previousScope = useRef(scope);
 
   // Initialize all rows together. Row mount effects would reselect unchecked
@@ -20,6 +22,7 @@ export default function useImportSelection(
     previousScope.current = scope;
     if (scopeChanged) {
       lastToggled.current = null;
+      explicitSelections.current.clear();
     }
 
     setSelectedState((existing) => {
@@ -28,15 +31,20 @@ export default function useImportSelection(
       let changed = Object.keys(previous).length !== items.length;
 
       items.forEach((item) => {
-        next[item.id] =
-          previous[item.id] ??
-          !!(
-            allowMovieChange &&
-            item.movie &&
-            item.quality &&
-            item.languages &&
-            item.size > 0
-          );
+        const canAutoSelect = !!(
+          allowMovieChange &&
+          item.movie &&
+          (item.movie.itemType !== 'scene' ||
+            getAutomaticSceneMatch(item.path, [item.movie])) &&
+          item.quality &&
+          item.languages &&
+          !item.rejections.length &&
+          item.size > 0
+        );
+        next[item.id] = previous[item.id] ?? canAutoSelect;
+        if (!canAutoSelect && !explicitSelections.current.has(item.id)) {
+          next[item.id] = false;
+        }
         changed ||= next[item.id] !== previous[item.id];
       });
 
@@ -50,6 +58,7 @@ export default function useImportSelection(
       setSelectedState((previous) => {
         const next = { ...previous };
         pageItems.forEach(({ id }) => {
+          explicitSelections.current.add(id);
           next[id] = value;
         });
         return next;
@@ -62,6 +71,7 @@ export default function useImportSelection(
     (id: number, value: boolean, shiftKey: boolean) => {
       const anchor = lastToggled.current;
       lastToggled.current = id;
+      explicitSelections.current.add(id);
 
       setSelectedState((previous) => {
         const next = { ...previous, [id]: value };
@@ -72,6 +82,7 @@ export default function useImportSelection(
           pageItems
             .slice(Math.min(start, end), Math.max(start, end) + 1)
             .forEach((item) => {
+              explicitSelections.current.add(item.id);
               next[item.id] = value;
             });
         }
