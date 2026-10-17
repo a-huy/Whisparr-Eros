@@ -11,7 +11,7 @@ import { icons, kinds } from 'Helpers/Props';
 import { useSingleMovieFile } from 'MovieFile/useMovieFile';
 import { useUiSettingsValues } from 'Settings/UI/useUiSettings';
 import translate from 'Utilities/String/translate';
-import styles from './AgendaEvent.css';
+import styles from './AgendaEvent.module.css';
 
 interface AgendaEventProps {
   id: number;
@@ -45,7 +45,7 @@ function AgendaEvent({
   hasFile,
   grabbed,
   showDate,
-}: AgendaEventProps) {
+}: Readonly<AgendaEventProps>) {
   const { data: movieFile } = useSingleMovieFile(movieFileId);
   const queueItem = useQueueItemForMovie(id);
   const { longDateFormat, enableColorImpairedMode } = useUiSettingsValues();
@@ -96,7 +96,7 @@ function AgendaEvent({
 
   return (
     <div className={styles.event}>
-      <Link className={styles.underlay} to={link} />
+      <Link className={styles.underlay} to={link} aria-label={title} />
 
       <div className={styles.overlay}>
         <div className={styles.date}>

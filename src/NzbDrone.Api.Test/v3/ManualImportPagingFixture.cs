@@ -14,6 +14,24 @@ namespace NzbDrone.Api.Test.v3
     public class ManualImportPagingFixture : TestBase<ManualImportController>
     {
         [Test]
+        public void should_forward_multiple_downloads_to_one_paged_service_request()
+        {
+            var ids = new[] { "first", "second" };
+            Mocker.GetMock<IManualImportService>()
+                .Setup(service => service.GetMediaFilesPage(null, null, null, true, It.IsAny<PagingSpec<ManualImportItem>>(), ids))
+                .Returns((string folder, string downloadId, int? movieId, bool filter, PagingSpec<ManualImportItem> spec, IEnumerable<string> downloads) =>
+                {
+                    spec.TotalRecords = 60;
+                    spec.Records = new List<ManualImportItem> { new ManualImportItem { Path = "/second/file.mkv", DownloadId = "second" } };
+                    return spec;
+                });
+            var result = Subject.GetMediaFilesPage(new PagingRequestResource { Page = 2 }, null, null, null, downloadIds: ids);
+            result.Page.Should().Be(2);
+            result.TotalRecords.Should().Be(60);
+            result.Records.Should().ContainSingle().Which.DownloadId.Should().Be("second");
+        }
+
+        [Test]
         public void should_return_the_bounded_page_and_total_without_calling_the_unpaged_service()
         {
             Mocker.GetMock<IManualImportService>()

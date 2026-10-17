@@ -30,6 +30,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
         List<ManualImportItem> GetMediaFiles(int movieId);
         List<ManualImportItem> GetMediaFiles(string path, string downloadId, int? movieId, bool filterExistingFiles);
         PagingSpec<ManualImportItem> GetMediaFilesPage(string path, string downloadId, int? movieId, bool filterExistingFiles, PagingSpec<ManualImportItem> pagingSpec);
+        PagingSpec<ManualImportItem> GetMediaFilesPage(string path, string downloadId, int? movieId, bool filterExistingFiles, PagingSpec<ManualImportItem> pagingSpec, IEnumerable<string> downloadIds);
         ManualImportItem ReprocessItem(string path, string downloadId, int movieId, string releaseGroup, QualityModel quality, List<Language> languages, int indexerFlags);
     }
 
@@ -47,6 +48,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
         private readonly IDownloadedMovieImportService _downloadedMovieImportService;
         private readonly IMediaFileService _mediaFileService;
         private readonly ICustomFormatCalculationService _formatCalculator;
+        private readonly ILocalMovieCustomFormatCalculationService _localMovieFormatCalculator;
         private readonly IEventAggregator _eventAggregator;
         private readonly IConfigService _configService;
         private readonly IStudioService _studioService;
@@ -64,6 +66,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
                                    IDownloadedMovieImportService downloadedMovieImportService,
                                    IMediaFileService mediaFileService,
                                    ICustomFormatCalculationService formatCalculator,
+                                   ILocalMovieCustomFormatCalculationService localMovieFormatCalculator,
                                    IEventAggregator eventAggregator,
                                    IConfigService configService,
                                    IStudioService studioService,
@@ -81,6 +84,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
             _downloadedMovieImportService = downloadedMovieImportService;
             _mediaFileService = mediaFileService;
             _formatCalculator = formatCalculator;
+            _localMovieFormatCalculator = localMovieFormatCalculator;
             _eventAggregator = eventAggregator;
             _configService = configService;
             _studioService = studioService;
@@ -103,6 +107,11 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
                 Path = Path.Combine(movie.Path, movieFile.RelativePath),
                 Analyze = () => MapItem(movieFile, movie, directoryInfo.Name)
             }).ToList();
+
+            if (!_diskProvider.FolderExists(movie.Path))
+            {
+                return items;
+            }
 
             var mediaFiles = _diskScanService.FilterPaths(movie.Path, _diskScanService.GetVideoFiles(movie.Path)).ToList();
             var unmappedFiles = MediaFileService.FilterExistingFiles(mediaFiles, movieFiles, movie);
@@ -139,6 +148,13 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
                     return new List<ManualImportItem>();
                 }
 
+                // The import item is only set once the download has completed
+                if (trackedDownload.ImportItem == null)
+                {
+                    _logger.Debug("Download {0} has not completed yet, nothing to import", downloadId.ForLog());
+                    return new List<ManualImportItem>();
+                }
+
                 path = trackedDownload.ImportItem.OutputPath.FullPath;
             }
 
@@ -164,31 +180,42 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
 
         public PagingSpec<ManualImportItem> GetMediaFilesPage(string path, string downloadId, int? movieId, bool filterExistingFiles, PagingSpec<ManualImportItem> pagingSpec)
         {
+            return GetMediaFilesPage(path, downloadId, movieId, filterExistingFiles, pagingSpec, Enumerable.Empty<string>());
+        }
+
+        public PagingSpec<ManualImportItem> GetMediaFilesPage(string path, string downloadId, int? movieId, bool filterExistingFiles, PagingSpec<ManualImportItem> pagingSpec, IEnumerable<string> downloadIds)
+        {
+            var ids = (downloadIds ?? Enumerable.Empty<string>()).Append(downloadId)
+                .Where(id => id.IsNotNullOrWhiteSpace()).Distinct().ToList();
             var requestedPaths = new HashSet<string>(PathEqualityComparer.Instance);
-            List<ImportCandidate> candidates;
-            if (movieId.HasValue && downloadId.IsNullOrWhiteSpace())
+            var candidates = new List<ImportCandidate>();
+            if (movieId.HasValue && ids.Empty())
             {
                 // Library file rows already have metadata; they need no import analysis.
                 candidates = GetMovieCandidates(movieId.Value);
             }
             else
             {
-                if (downloadId.IsNotNullOrWhiteSpace())
+                var sources = ids.Any()
+                    ? ids.Select(id => (Path: _trackedDownloadService.Find(id)?.ImportItem?.OutputPath.FullPath, DownloadId: id))
+                    : new[] { (Path: path, DownloadId: (string)null) };
+                foreach (var source in sources)
                 {
-                    path = _trackedDownloadService.Find(downloadId)?.ImportItem.OutputPath.FullPath;
-                }
-
-                candidates = new List<ImportCandidate>();
-                if (path.IsNotNullOrWhiteSpace() && _diskProvider.FolderExists(path))
-                {
-                    candidates = GetCandidates(path, path, downloadId, movieId, filterExistingFiles, requestedPaths).ToList();
-                }
-                else if (path.IsNotNullOrWhiteSpace() && _diskProvider.FileExists(path))
-                {
-                    var parent = Path.GetDirectoryName(path);
-                    candidates.Add(new ImportCandidate { Path = path, Analyze = () => ProcessFile(parent, parent, path, downloadId) });
+                    var sourcePath = source.Path;
+                    var sourceId = source.DownloadId;
+                    if (sourcePath.IsNotNullOrWhiteSpace() && _diskProvider.FolderExists(sourcePath))
+                    {
+                        candidates.AddRange(GetCandidates(sourcePath, sourcePath, sourceId, movieId, filterExistingFiles, requestedPaths));
+                    }
+                    else if (sourcePath.IsNotNullOrWhiteSpace() && _diskProvider.FileExists(sourcePath))
+                    {
+                        var parent = Path.GetDirectoryName(sourcePath);
+                        candidates.Add(new ImportCandidate { Path = sourcePath, Analyze = () => ProcessFile(parent, parent, sourcePath, sourceId) });
+                    }
                 }
             }
+
+            candidates = candidates.GroupBy(file => file.Path, PathEqualityComparer.Instance).Select(group => group.First()).ToList();
 
             // Use the complete path as a deterministic tiebreaker, including duplicate basenames.
             IEnumerable<ImportCandidate> ordered = pagingSpec.SortKey == "size"
@@ -304,8 +331,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
             localMovie.Quality = finalQuality;
             localMovie.IndexerFlags = (IndexerFlags)indexerFlags;
 
-            localMovie.CustomFormats = _formatCalculator.ParseCustomFormat(localMovie);
-            localMovie.CustomFormatScore = localMovie.Movie?.QualityProfile?.CalculateCustomFormatScore(localMovie.CustomFormats) ?? 0;
+            _localMovieFormatCalculator.UpdateMovieCustomFormats(localMovie);
 
             // Augment movie file so imported files have all additional information an automatic import would
             localMovie = _aggregationService.Augment(localMovie, downloadClientItem);
@@ -538,7 +564,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
             {
                 item.Movie = decision.LocalMovie.Movie;
 
-                item.CustomFormats = _formatCalculator.ParseCustomFormat(decision.LocalMovie);
+                item.CustomFormats = _localMovieFormatCalculator.ParseMovieCustomFormats(decision.LocalMovie);
                 item.CustomFormatScore = item.Movie.QualityProfile?.CalculateCustomFormatScore(item.CustomFormats) ?? 0;
             }
 
@@ -631,8 +657,7 @@ namespace NzbDrone.Core.MediaFiles.MovieImport.Manual
                         localMovie.Languages = file.Languages;
                     }
 
-                    localMovie.CustomFormats = _formatCalculator.ParseCustomFormat(localMovie);
-                    localMovie.CustomFormatScore = localMovie.Movie.QualityProfile?.CalculateCustomFormatScore(localMovie.CustomFormats) ?? 0;
+                    _localMovieFormatCalculator.UpdateMovieCustomFormats(localMovie);
 
                     // TODO: Cleanup non-tracked downloads
                     var importDecision = new ImportDecision(localMovie);

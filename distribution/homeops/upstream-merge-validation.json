@@ -1,0 +1,30 @@
+{
+  "validated_at_utc": "2026-10-17T03:47:30.575101+00:00",
+  "upstream_tag": "v3.6.5-release.1886",
+  "upstream_commit": "8048febe9463e90e6943380d016228ed3c379c86",
+  "previous_fork_commit": "a9926df7dea02850379c192f6d25802d190d2a15",
+  "upstream_security_fix": "f00195e4b630ce64e9e3195b6c99945cd46af970",
+  "fork_build_version": "3.6.5.1887",
+  "checks": {
+    "backend_tests": {
+      "core": 13,
+      "decision": 24,
+      "api": 16,
+      "root": 10
+    },
+    "total_backend_tests": 63,
+    "complete_application_build": "passed, zero warnings/errors",
+    "nuget_auditing": "enabled",
+    "frontend_types": "passed",
+    "fork_frontend_lint": "passed, 19 source files",
+    "production_vite_build": "passed",
+    "deterministic_matching_regression": "passed",
+    "browser_regression": "passed, synthetic intercepted APIs only",
+    "manual_import_fixture_files": 10001,
+    "library_import_fixture_files": 1001,
+    "multiple_queue_downloads": "passed, global paging and per-file download IDs",
+    "cancel_start_processing": "passed",
+    "batch_refresh_and_recovery": "passed"
+  },
+  "deployment": "Source merge only; live deployment remains homenet/whisparr:a9926df7d."
+}

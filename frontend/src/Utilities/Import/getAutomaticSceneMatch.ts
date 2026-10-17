@@ -28,6 +28,7 @@ function parseSceneFilename(path: string) {
   const parsed = stem.match(
     /^(.+?)[._ -]+((?:19|20)\d{2}|\d{2})[._-](\d{2})[._-](\d{2})[._ -]+(.+)$/
   );
+
   if (!parsed) {
     return null;
   }
@@ -37,6 +38,7 @@ function parseSceneFilename(path: string) {
   // stay unselected when they do not agree with the catalog's full date.
   const date = `${year.length === 2 ? '20' : ''}${year}-${month}-${day}`;
   const timestamp = new Date(`${date}T00:00:00Z`);
+
   if (
     !Number.isFinite(timestamp.getTime()) ||
     timestamp.toISOString().slice(0, 10) !== date
@@ -61,9 +63,11 @@ export default function getAutomaticSceneMatch<T extends SceneCandidate>(
   candidates: readonly T[]
 ): T | null {
   const parsed = parseSceneFilename(path);
+
   if (!parsed) {
     return null;
   }
+
   const { site, date, content } = parsed;
 
   const matches = new Map<string, T>();
@@ -95,16 +99,20 @@ export default function getAutomaticSceneMatch<T extends SceneCandidate>(
       .sort((a, b) => b.length - a.length);
 
     let matchedPerformer = false;
+
     while (remaining) {
       const current = remaining;
       const name = cast.find(
         (value) => current === value || current.startsWith(`${value} `)
       );
+
       if (!name) {
         break;
       }
+
       matchedPerformer = true;
       remaining = remaining.slice(name.length).trim();
+
       if (remaining.startsWith('and ')) {
         remaining = remaining.slice(4);
       }

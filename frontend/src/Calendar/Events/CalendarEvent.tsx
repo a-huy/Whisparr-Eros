@@ -11,7 +11,7 @@ import { useSingleMovieFile } from 'MovieFile/useMovieFile';
 import { useUiSettingsValues } from 'Settings/UI/useUiSettings';
 import translate from 'Utilities/String/translate';
 import CalendarEventQueueDetails from './CalendarEventQueueDetails';
-import styles from './CalendarEvent.css';
+import styles from './CalendarEvent.module.css';
 
 interface CalendarEventProps {
   id: number;
@@ -45,7 +45,7 @@ function CalendarEvent({
   monitored: isMonitored,
   hasFile,
   grabbed,
-}: CalendarEventProps) {
+}: Readonly<CalendarEventProps>) {
   const { data: movieFile } = useSingleMovieFile(movieFileId);
   const queueItem = useQueueItemForMovie(id);
 
@@ -93,7 +93,7 @@ function CalendarEvent({
         fullColorEvents && 'fullColor'
       )}
     >
-      <Link className={styles.underlay} to={link} />
+      <Link className={styles.underlay} to={link} aria-label={title} />
 
       <div className={styles.overlay}>
         <div className={styles.info}>

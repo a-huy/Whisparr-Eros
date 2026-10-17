@@ -15,6 +15,8 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/add/import/scenes/:rootFolderId" element={<div style={{ display: 'flex', height: '100vh', width: '100%' }}><ImportMovie itemType="scene" /></div>} />
+        <Route path="/queue-import" element={<InteractiveImportModal isOpen={true} downloadIds={['first', 'second']}
+          onModalClose={() => { document.title = 'closed'; }} />} />
         <Route path="*" element={<InteractiveImportModal isOpen={true} folder="/fixture" showDelete={true}
           showFilterExistingFiles={true} onModalClose={() => { document.title = 'closed'; }} />} />
       </Routes>

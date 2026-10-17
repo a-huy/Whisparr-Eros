@@ -6,6 +6,8 @@ using Moq;
 using NUnit.Framework;
 using NzbDrone.Common.Disk;
 using NzbDrone.Core.Datastore;
+using NzbDrone.Core.Download;
+using NzbDrone.Core.Download.TrackedDownloads;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.MediaFiles.MovieImport;
 using NzbDrone.Core.MediaFiles.MovieImport.Aggregation;
@@ -106,6 +108,46 @@ namespace NzbDrone.Core.Test.MediaFiles.MovieImport
             result.Records.First().Path.Should().Be(_files[51]);
             result.Records.Should().HaveCount(50);
             Mocker.GetMock<IMakeImportDecision>().Verify(maker => maker.GetImportDecisionsForPage(It.Is<List<string>>(files => files.Count == 50), remaining, movie, null, It.IsAny<ParsedMovieInfo>(), true), Times.Once());
+        }
+
+        [Test]
+        public void should_page_all_downloads_together_and_preserve_each_download_id()
+        {
+            foreach (var id in new[] { "first", "second" })
+            {
+                var folder = "/" + id;
+                Mocker.GetMock<ITrackedDownloadService>().Setup(service => service.Find(id))
+                    .Returns(new TrackedDownload { ImportItem = new DownloadClientItem { OutputPath = new OsPath(folder) } });
+                Mocker.GetMock<IDiskProvider>().Setup(disk => disk.FolderExists(folder)).Returns(true);
+                Mocker.GetMock<IDiskScanService>().Setup(disk => disk.GetVideoFiles(folder, false))
+                    .Returns(Enumerable.Range(1, 30).Select(i => $"{folder}/{i:000}.mkv").ToArray());
+            }
+
+            var spec = new PagingSpec<ManualImportItem>
+            {
+                Page = 2, PageSize = 50, SortKey = "relativePath", SortDirection = SortDirection.Ascending
+            };
+            var result = Subject.GetMediaFilesPage(null, "first", null, false, spec, new[] { "first", "second", "second", "missing" });
+
+            result.TotalRecords.Should().Be(60);
+            result.Records.Should().HaveCount(10);
+            result.Records.First().Path.Should().Be("/second/021.mkv");
+            result.Records.Should().OnlyContain(item => item.DownloadId == "second");
+            Mocker.GetMock<IAggregationService>().Verify(a => a.Augment(It.IsAny<LocalMovie>(), null), Times.Exactly(10));
+            Mocker.GetMock<IDiskProvider>().Verify(disk => disk.GetFileSize("/first/001.mkv"), Times.Never());
+        }
+
+        [Test]
+        public void should_skip_incomplete_downloads_in_a_paged_request()
+        {
+            Mocker.GetMock<ITrackedDownloadService>().Setup(service => service.Find("incomplete"))
+                .Returns(new TrackedDownload { DownloadItem = new DownloadClientItem() });
+            var result = Subject.GetMediaFilesPage(null, "incomplete", null, false, new PagingSpec<ManualImportItem>
+            {
+                Page = 1, PageSize = 50, SortKey = "relativePath", SortDirection = SortDirection.Ascending
+            });
+            result.TotalRecords.Should().Be(0);
+            result.Records.Should().BeEmpty();
         }
 
         [Test]

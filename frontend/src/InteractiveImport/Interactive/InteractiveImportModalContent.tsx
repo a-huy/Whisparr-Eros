@@ -52,7 +52,7 @@ import getErrorMessage from 'Utilities/Object/getErrorMessage';
 import translate from 'Utilities/String/translate';
 import InteractiveImportRow from './InteractiveImportRow';
 import useImportSelection from './useImportSelection';
-import styles from './InteractiveImportModalContent.css';
+import styles from './InteractiveImportModalContent.module.css';
 
 type SelectType =
   'select' | 'movie' | 'releaseGroup' | 'quality' | 'language' | 'indexerFlags';
@@ -164,7 +164,7 @@ function isSameMovieFile(
 }
 
 export interface InteractiveImportModalContentProps {
-  downloadId?: string;
+  downloadIds?: string[];
   movieId?: number;
   showMovie?: boolean;
   allowMovieChange?: boolean;
@@ -184,7 +184,7 @@ function InteractiveImportModalContent(
   props: InteractiveImportModalContentProps
 ) {
   const {
-    downloadId,
+    downloadIds,
     movieId,
     allowMovieChange = true,
     showMovie = true,
@@ -220,7 +220,7 @@ function InteractiveImportModalContent(
     error,
     updateItems,
   } = useInteractiveImport({
-    downloadId,
+    downloadIds,
     movieId,
     folder,
     filterExistingFiles,
@@ -245,7 +245,7 @@ function InteractiveImportModalContent(
     items,
     pageItems,
     allowMovieChange,
-    JSON.stringify([folder, downloadId, movieId, filterExistingFiles])
+    JSON.stringify([folder, downloadIds, movieId, filterExistingFiles])
   );
   const allSelected = pageItems.every((item) => selectedState[item.id]);
   const allUnselected = pageItems.every((item) => !selectedState[item.id]);
@@ -306,7 +306,7 @@ function InteractiveImportModalContent(
     setPage(1);
   }, [
     folder,
-    downloadId,
+    downloadIds,
     movieId,
     filterExistingFiles,
     sortKey,
@@ -422,7 +422,8 @@ function InteractiveImportModalContent(
   }, [setIsConfirmDeleteModalOpen]);
 
   const onImportSelectedPress = useCallback(() => {
-    const finalImportMode = downloadId || !showImportMode ? 'auto' : importMode;
+    const finalImportMode =
+      downloadIds?.length || !showImportMode ? 'auto' : importMode;
 
     const existingFiles: Partial<MovieFile>[] = [];
     const files: InteractiveImportCommandOptions[] = [];
@@ -441,6 +442,7 @@ function InteractiveImportModalContent(
 
     selectedItems.forEach((item) => {
       const {
+        downloadId,
         movie,
         releaseGroup,
         quality,
@@ -522,7 +524,7 @@ function InteractiveImportModalContent(
       onModalClose();
     }
   }, [
-    downloadId,
+    downloadIds,
     showImportMode,
     importMode,
     selectedItems,
@@ -723,7 +725,7 @@ function InteractiveImportModalContent(
             </SpinnerButton>
           ) : null}
 
-          {!downloadId && showImportMode ? (
+          {!downloadIds?.length && showImportMode ? (
             <SelectInput
               className={styles.importMode}
               name="importMode"

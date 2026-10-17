@@ -40,7 +40,7 @@ import useImportMutation, { buildImportBody } from '../useImportMutation';
 import ImportMovieFooter from './ImportMovieFooter';
 import ImportMovieTable from './ImportMovieTable';
 
-const EMPTY_IMPORT_FILES: ImportFile[] = [];
+const EMPTY_IMPORT_FILES: ReadonlyArray<ImportFile> = [];
 
 interface ImportMovieProps {
   readonly itemType?: ImportItemType;
@@ -60,6 +60,7 @@ function getSelectedIds(selectedState: Record<string, boolean>): string[] {
       if (value) {
         result.push(id);
       }
+
       return result;
     },
     []
@@ -127,6 +128,7 @@ function ImportMovieContent({ itemType }: ImportMovieProps) {
   const [refreshError, setRefreshError] = useState<ApiError | null>(null);
   const refreshImportFiles = useCallback(async () => {
     setRefreshError(null);
+
     try {
       await refreshRootFolderAsync({ id: rootFolderId });
     } catch (error) {
@@ -232,11 +234,13 @@ function ImportMovieContent({ itemType }: ImportMovieProps) {
         const newMatch =
           item.selectedMovie?.foreignId !== old?.selectedMovie?.foreignId;
         let isSelected = state.selectedState[item.id] ?? false;
+
         if (!item.selectedMovie) {
           isSelected = false;
         } else if (newMatch) {
           isSelected = !item.selectedMovie.isExisting;
         }
+
         selectedState[item.id] = isSelected;
         changed ||= selectedState[item.id] !== state.selectedState[item.id];
       });
@@ -292,6 +296,7 @@ function ImportMovieContent({ itemType }: ImportMovieProps) {
           (item) => item.id === previous.lastToggled
         );
         const end = pageItems.findIndex((item) => item.id === String(id));
+
         if (shiftKey && start >= 0 && end >= 0) {
           pageItems
             .slice(Math.min(start, end), Math.max(start, end) + 1)
@@ -299,6 +304,7 @@ function ImportMovieContent({ itemType }: ImportMovieProps) {
               selectedState[item.id] = !!value && !!item.selectedMovie;
             });
         }
+
         return { ...previous, selectedState, lastToggled: String(id) };
       });
     },
@@ -339,11 +345,13 @@ function ImportMovieContent({ itemType }: ImportMovieProps) {
   const onFooterInputChange = useCallback(
     ({ name, value }: { name: string; value: string | number }) => {
       const selectedIds = getSelectedIds(selectionState.selectedState);
+
       if (name === 'monitor') {
         setAddMovieDefault('monitor', value as string);
       } else if (name === 'qualityProfileId') {
         setAddMovieDefault('qualityProfileId', value as number);
       }
+
       selectedIds.forEach((id) => {
         dispatch({
           type: 'SET_ITEM_VALUE',
@@ -364,6 +372,7 @@ function ImportMovieContent({ itemType }: ImportMovieProps) {
     );
 
     const body = buildImportBody(selectedItems);
+
     if (!body.length) {
       return;
     }

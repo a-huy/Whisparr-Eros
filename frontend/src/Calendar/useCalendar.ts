@@ -86,7 +86,7 @@ const VIEW_RANGES: Record<
   forecast: 'day',
 };
 
-const DEFAULT_ITEMS: CalendarItem[] = [];
+const DEFAULT_ITEMS: ReadonlyArray<CalendarItem> = [];
 
 const getDays = (start: moment.Moment, end: moment.Moment) => {
   const startTime = moment(start);
@@ -107,12 +107,16 @@ const getDates = (
 ) => {
   const weekName = firstDayOfWeek === 0 ? 'week' : 'isoWeek';
 
+  // 'week' starts on the locale's first day. Pinning 'en' keeps it on Sunday,
+  // so the first-day-of-week setting decides rather than the UI language.
+  const weekTime = time.clone().locale('en');
+
   let start = time.clone().startOf('day');
   let end = time.clone().endOf('day');
 
   if (view === 'week') {
-    start = time.clone().startOf(weekName);
-    end = time.clone().endOf(weekName);
+    start = weekTime.clone().startOf(weekName);
+    end = weekTime.clone().endOf(weekName);
   }
 
   if (view === 'forecast') {
@@ -124,8 +128,8 @@ const getDates = (
   }
 
   if (view === 'month') {
-    start = time.clone().startOf('month').startOf(weekName);
-    end = time.clone().endOf('month').endOf(weekName);
+    start = weekTime.clone().startOf('month').startOf(weekName);
+    end = weekTime.clone().endOf('month').endOf(weekName);
   }
 
   if (view === 'agenda') {

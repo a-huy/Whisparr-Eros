@@ -20,6 +20,7 @@ export default function useImportSelection(
   useEffect(() => {
     const scopeChanged = previousScope.current !== scope;
     previousScope.current = scope;
+
     if (scopeChanged) {
       lastToggled.current = null;
       explicitSelections.current.clear();
@@ -42,9 +43,11 @@ export default function useImportSelection(
           item.size > 0
         );
         next[item.id] = previous[item.id] ?? canAutoSelect;
+
         if (!canAutoSelect && !explicitSelections.current.has(item.id)) {
           next[item.id] = false;
         }
+
         changed ||= next[item.id] !== previous[item.id];
       });
 

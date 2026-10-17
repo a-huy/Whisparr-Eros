@@ -24,22 +24,40 @@ namespace Whisparr.Api.V3.ManualImport
 
         [HttpGet]
         [Produces("application/json")]
-        public List<ManualImportResource> GetMediaFiles(string folder, string downloadId, int? movieId, bool filterExistingFiles = true)
+        public List<ManualImportResource> GetMediaFiles(string folder, string downloadId, [FromQuery] string[] downloadIds, int? movieId, bool filterExistingFiles = true)
         {
-            if (movieId.HasValue && downloadId.IsNullOrWhiteSpace())
+            // downloadId is kept for existing API clients; downloadIds lets the queue import several downloads at once
+            var allDownloadIds = (downloadIds ?? Enumerable.Empty<string>())
+                .Append(downloadId)
+                .Where(id => id.IsNotNullOrWhiteSpace())
+                .Distinct()
+                .ToList();
+
+            if (movieId.HasValue && allDownloadIds.Empty())
             {
                 return _manualImportService.GetMediaFiles(movieId.Value).ToResource().Select(AddQualityWeight).ToList();
             }
 
-            return _manualImportService.GetMediaFiles(folder, downloadId, movieId, filterExistingFiles).ToResource().Select(AddQualityWeight).ToList();
+            if (allDownloadIds.Any())
+            {
+                return allDownloadIds
+                    .SelectMany(id => _manualImportService.GetMediaFiles(null, id, movieId, filterExistingFiles))
+                    .ToResource()
+                    .Select(AddQualityWeight)
+                    .ToList();
+            }
+
+            return _manualImportService.GetMediaFiles(folder, null, movieId, filterExistingFiles).ToResource().Select(AddQualityWeight).ToList();
         }
 
         [HttpGet("paged")]
         [Produces("application/json")]
-        public PagingResource<ManualImportResource> GetMediaFilesPage([FromQuery] PagingRequestResource request, string folder, string downloadId, int? movieId, bool filterExistingFiles = true)
+        public PagingResource<ManualImportResource> GetMediaFilesPage([FromQuery] PagingRequestResource request, string folder, string downloadId, int? movieId, bool filterExistingFiles = true, [FromQuery] string[] downloadIds = null)
         {
             var spec = ImportPagingRequest.ToSpec<ManualImportItem>(request, "relativePath", "size");
-            var result = _manualImportService.GetMediaFilesPage(folder, downloadId, movieId, filterExistingFiles, spec);
+            var result = downloadIds?.Length > 0
+                ? _manualImportService.GetMediaFilesPage(folder, downloadId, movieId, filterExistingFiles, spec, downloadIds)
+                : _manualImportService.GetMediaFilesPage(folder, downloadId, movieId, filterExistingFiles, spec);
             return new PagingResource<ManualImportResource>
             {
                 Page = result.Page,

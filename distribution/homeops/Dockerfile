@@ -1,6 +1,6 @@
 FROM ghcr.io/hotio/whisparr:v3@sha256:4edd949338a80cf256cb968ec2127d77023df1b6a2c5248b180773dd91853d20
 ARG REVISION
-ARG VERSION=3.6.2.1728
+ARG VERSION=3.6.5.1887
 LABEL org.opencontainers.image.source="https://gitlab.ahn.io/a-huy/whisparr" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.version="${VERSION}-homeops" \

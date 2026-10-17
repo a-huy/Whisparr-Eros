@@ -27,6 +27,7 @@ function useImportLookupQueue(dispatch: React.Dispatch<ImportAction>) {
     if (processingRef.current || !queueRef.current.length) {
       return;
     }
+
     processingRef.current = true;
     const generation = generationRef.current;
     setIsLookingUp(true);
@@ -39,9 +40,11 @@ function useImportLookupQueue(dispatch: React.Dispatch<ImportAction>) {
       dispatch({ type: 'SET_ITEM_FETCHING', id: entry.id });
       dispatch({ type: 'SET_QUEUED', id: entry.id, queued: false });
       const params = new URLSearchParams({ term: entry.term });
+
       if (entry.itemType) {
         params.set('itemType', entry.itemType);
       }
+
       try {
         let results = await fetchJson<MovieLookupResult[], never>({
           path: getQueryPath(`/movie/lookup?${params.toString()}`),
@@ -55,6 +58,7 @@ function useImportLookupQueue(dispatch: React.Dispatch<ImportAction>) {
         });
         const fallbackTerm =
           entry.itemType === 'movie' ? null : getSceneLookupTerm(entry.term);
+
         if (
           generation === generationRef.current &&
           fallbackTerm &&
@@ -80,6 +84,7 @@ function useImportLookupQueue(dispatch: React.Dispatch<ImportAction>) {
             ).values()
           );
         }
+
         if (generation === generationRef.current) {
           dispatch({ type: 'SET_LOOKUP_RESULTS', id: entry.id, results });
         }
@@ -130,9 +135,11 @@ function useImportLookupQueue(dispatch: React.Dispatch<ImportAction>) {
       if (entry.term.length <= 2) {
         return;
       }
+
       queueRef.current = queueRef.current.filter(
         (queued) => queued.id !== entry.id
       );
+
       if (entry.topOfQueue) {
         generationRef.current += 1;
         abortRef.current?.abort();
@@ -146,6 +153,7 @@ function useImportLookupQueue(dispatch: React.Dispatch<ImportAction>) {
         queueRef.current.push(entry);
         dispatch({ type: 'SET_QUEUED', id: entry.id, queued: true });
       }
+
       processQueue();
     },
     [dispatch, processQueue]

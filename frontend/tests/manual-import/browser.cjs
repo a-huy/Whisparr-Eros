@@ -1,4 +1,4 @@
-// Build: yarn webpack --config frontend/tests/manual-import/webpack.cjs
+// Build: yarn vite build --config frontend/tests/manual-import/vite.config.mts
 // Run with NODE_PATH pointing to Playwright. All API calls are intercepted fixtures.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -40,6 +40,7 @@ items[10000].movieFileId = undefined;
     const libraryRequests = [];
     const lookupRequests = [];
     let refreshGate = null;
+    let lookupGate = null;
     let failNextRefresh = false;
     let pendingImportPaths = new Set();
     const libraryFiles = Array.from({ length: 1001 }, (_, i) => ({
@@ -97,6 +98,7 @@ items[10000].movieFileId = undefined;
         } else if (url.pathname === '/api/v3/movie/lookup') {
           const term = url.searchParams.get('term');
           lookupRequests.push(term);
+          if (lookupGate) await lookupGate;
           const title = term.match(/Scene\d+/)?.[0];
           data = title ? [{ foreignId: title, title, itemType: 'scene', studioTitle: 'Fixture Site', releaseDate: '2026-01-01T00:00:00Z',
             isExisting: false, year: 2026, tmdbId: 0, searchCredits: [] }] : [];
@@ -105,7 +107,10 @@ items[10000].movieFileId = undefined;
         if (url.pathname.endsWith('/manualimport/paged')) {
           const pageNumber = Number(url.searchParams.get('page'));
           const pageSize = Number(url.searchParams.get('pageSize'));
-          const source = [...(scenePhase ? sceneItems : url.searchParams.get('filterExistingFiles') === 'true' ? items.slice(0, 3) : items)];
+          const queueItems = ['first', 'second'].map((downloadId, index) => ({ ...makeItem(index + 1), downloadId, movieFileId: undefined }));
+          const isQueue = url.searchParams.has('downloadIds');
+          if (isQueue) assert.deepEqual(url.searchParams.getAll('downloadIds'), ['first', 'second']);
+          const source = [...(isQueue ? queueItems : scenePhase ? sceneItems : url.searchParams.get('filterExistingFiles') === 'true' ? items.slice(0, 3) : items)];
           if (url.searchParams.get('sortDirection') === 'descending') source.reverse();
           data = { page: pageNumber, pageSize, totalRecords: source.length,
             records: source.slice((pageNumber - 1) * pageSize, pageNumber * pageSize) };
@@ -113,7 +118,7 @@ items[10000].movieFileId = undefined;
         }
         return route.fulfill({ json: data });
       }
-      if (url.pathname === '/' || url.pathname.startsWith('/add/')) {
+      if (url.pathname === '/' || url.pathname === '/queue-import' || url.pathname.startsWith('/add/')) {
         return route.fulfill({ contentType: 'text/html', body: fs.readFileSync(path.join(output, 'index.html'), 'utf8').replaceAll('__URL_BASE__', '').replace("urlBase: ''", "urlBase: '', apiRoot: '/api/v3', apiKey: 'fixture', theme: 'light'") });
       }
       const file = path.join(output, url.pathname);
@@ -225,7 +230,20 @@ items[10000].movieFileId = undefined;
     assert.equal(await rows.nth(1).locator('input[type=checkbox]').first().isChecked(), true,
       'new rejections clear automatic selection while preserving explicit user choices');
     assert.deepEqual(errors, []);
+    await page.goto('http://whisparr.test/queue-import');
+    await page.waitForFunction(() => document.body.textContent.includes('Import (2)'));
+    await importButton.click();
+    await page.waitForFunction(() => document.title === 'closed');
+    const queueCommand = writes.filter(write => write.path === '/api/v3/command').at(-1);
+    assert.deepEqual(queueCommand.body.files.map(file => file.downloadId), ['first', 'second'], 'each queue import file retains its source download');
+    let releaseLookup;
+    lookupGate = new Promise(resolve => { releaseLookup = resolve; });
     await page.goto('http://whisparr.test/add/import/scenes/1');
+    await page.getByRole('button', { name: 'Cancel Processing', exact: true }).click();
+    await page.getByRole('button', { name: 'Start Processing', exact: true }).waitFor();
+    releaseLookup();
+    lookupGate = null;
+    await page.getByRole('button', { name: 'Start Processing', exact: true }).click();
     try {
       await page.waitForFunction(() => document.querySelectorAll('[class*="ImportMovieTable-row"]').length === 50);
     } catch (error) {
@@ -234,20 +252,21 @@ items[10000].movieFileId = undefined;
     }
     await page.waitForFunction(() => document.querySelectorAll('[class*="ImportMovieTable-row"] input[type=checkbox]:checked').length === 50);
     assert.deepEqual(libraryRequests, [{ page: 1, count: 50 }]);
-    assert.equal(lookupRequests.length, 50);
+    const firstPageLookups = lookupRequests.length;
+    assert(firstPageLookups >= 50 && firstPageLookups <= 51);
     await page.locator('[class*="ImportMovieTable-row"]').first().locator('label').click();
     await next.click();
     await page.waitForFunction(() => document.querySelector('[class*="ImportMovieTable-row"]')?.textContent.includes('0051/same.mkv'));
     await page.waitForFunction(() => document.querySelectorAll('[class*="ImportMovieTable-row"] input[type=checkbox]:checked').length === 50);
-    assert.equal(lookupRequests.length, 100);
+    assert.equal(lookupRequests.length, firstPageLookups + 50);
     await first.click();
     await page.waitForFunction(() => document.querySelector('[class*="ImportMovieTable-row"]')?.textContent.includes('0001/same.mkv'));
     assert.equal(await page.locator('[class*="ImportMovieTable-row"]').first().locator('input[type=checkbox]').isChecked(), false);
-    assert.equal(lookupRequests.length, 100, 'cached page lookup results must survive paging');
+    assert.equal(lookupRequests.length, firstPageLookups + 50, 'cached page lookup results must survive paging');
     await last.click();
     await page.waitForFunction(() => document.querySelectorAll('[class*="ImportMovieTable-row"]').length === 1);
     await page.waitForFunction(() => document.querySelectorAll('[class*="ImportMovieTable-row"] input[type=checkbox]:checked').length === 1);
-    assert.equal(lookupRequests.length, 101, 'unvisited pages must never trigger catalog lookups');
+    assert.equal(lookupRequests.length, firstPageLookups + 51, 'unvisited pages must never trigger catalog lookups');
     assert(libraryRequests.every(request => request.count <= 50));
     assert(libraryRequests.some(request => request.page === 21));
     assert.deepEqual(errors, []);
@@ -307,6 +326,7 @@ items[10000].movieFileId = undefined;
     assert.equal(batchWrites().length, 3, 'refresh retry never repeats a successful import');
     assert.equal(await libraryRows.first().locator('input[type=checkbox]').isChecked(), false);
     assert.deepEqual(errors, []);
+    console.log('PASS: multiple queue downloads preserve per-file source IDs; Cancel/Start Processing controls work.');
     console.log('PASS: batch imports rescan and refill without reload; counts/page clamping, pending-refresh navigation, preserved deselection and refresh-only retry.');
     console.log('PASS: library import fetches only requested pages, retains lookup results and deselections, handles duplicate basenames and files beyond 500.');
     console.log('PASS: only clear scene evidence auto-selects; credit/site/date conflicts, rejections and missing matches stay unchecked; setting edits do not approve review rows; explicit selection works.');

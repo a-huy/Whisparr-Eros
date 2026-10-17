@@ -10,7 +10,7 @@ import { isCommandExecuting } from 'Utilities/Command';
 import formatDate from 'Utilities/Date/formatDate';
 import formatDateTime from 'Utilities/Date/formatDateTime';
 import formatTimeSpan from 'Utilities/Date/formatTimeSpan';
-import styles from './ScheduledTaskRow.css';
+import styles from './ScheduledTaskRow.module.css';
 
 interface ScheduledTaskRowProps {
   id: number;
@@ -23,7 +23,7 @@ interface ScheduledTaskRowProps {
   nextExecution: string;
 }
 
-function ScheduledTaskRow(props: ScheduledTaskRowProps) {
+function ScheduledTaskRow(props: Readonly<ScheduledTaskRowProps>) {
   const {
     taskName,
     name,
@@ -58,7 +58,7 @@ function ScheduledTaskRow(props: ScheduledTaskRowProps) {
     return moment
       .duration(interval, 'minutes')
       .humanize()
-      .replace(/an?(?=\s)/, '1');
+      .replace(/^an?(?=\s)/, '1');
   }, [interval]);
 
   const { lastExecutionTime, nextExecutionTime } = useMemo(() => {
@@ -94,6 +94,7 @@ function ScheduledTaskRow(props: ScheduledTaskRowProps) {
 
   useEffect(() => {
     const interval = setInterval(() => setTime(Date.now()), 1000);
+
     return () => {
       clearInterval(interval);
     };

@@ -64,7 +64,7 @@ export interface ImportItem {
 export type ImportAction =
   | {
       type: 'INIT_ITEMS' | 'MERGE_ITEMS';
-      files: ImportFile[];
+      files: ReadonlyArray<ImportFile>;
       itemType?: ImportItemType;
       defaults: { monitor: string; qualityProfileId: number };
     }
@@ -101,6 +101,8 @@ export function importReducer(
 ): ImportState {
   switch (action.type) {
     case 'INIT_ITEMS':
+    // fall through
+
     case 'MERGE_ITEMS': {
       const existing = action.type === 'MERGE_ITEMS' ? state.items : [];
       const known = new Set(existing.map((item) => item.id));
@@ -156,15 +158,18 @@ export function importReducer(
           if (item.id !== action.id) {
             return item;
           }
+
           const isSceneLookup =
             item.itemType === 'scene' ||
             action.results.some((result) => result.itemType === 'scene');
           let selectedMovie = item.selectedMovie;
+
           if (!item.matchManuallySelected) {
             selectedMovie = isSceneLookup
               ? getAutomaticSceneMatch(item.term, action.results)
               : (item.selectedMovie ?? action.results[0] ?? null);
           }
+
           return {
             ...item,
             isFetching: false,

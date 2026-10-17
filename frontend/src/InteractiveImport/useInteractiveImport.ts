@@ -9,10 +9,10 @@ import { useInteractiveImportOptions } from './interactiveImportOptionsStore';
 
 export const MANUAL_IMPORT_PATH = '/manualimport';
 
-const DEFAULT_ITEMS: InteractiveImport[] = [];
+const DEFAULT_ITEMS: ReadonlyArray<InteractiveImport> = [];
 
 export interface InteractiveImportParams {
-  downloadId?: string;
+  downloadIds?: string[];
   movieId?: number;
   folder?: string;
   filterExistingFiles?: boolean;
@@ -46,10 +46,10 @@ export default function useInteractiveImport(params: InteractiveImportParams) {
   const { sortKey, sortDirection } = useInteractiveImportOptions();
   const [changes, setChanges] = useState<ItemChanges>({});
 
-  const { downloadId, movieId, folder, filterExistingFiles, page, pageSize } =
+  const { downloadIds, movieId, folder, filterExistingFiles, page, pageSize } =
     params;
   const scope = JSON.stringify([
-    downloadId,
+    downloadIds,
     movieId,
     folder,
     filterExistingFiles,
@@ -69,7 +69,7 @@ export default function useInteractiveImport(params: InteractiveImportParams) {
   } = useApiQuery<PagedQueryResponse<InteractiveImport>>({
     path: `${MANUAL_IMPORT_PATH}/paged`,
     queryParams: {
-      downloadId,
+      downloadIds,
       movieId,
       folder,
       filterExistingFiles,

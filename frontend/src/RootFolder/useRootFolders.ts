@@ -11,7 +11,7 @@ export const ROOT_FOLDERS_QUERY_KEY = [
   JSON.stringify(SUMMARY_PARAMS),
 ];
 
-const DEFAULT_ROOT_FOLDERS: RootFolder[] = [];
+const DEFAULT_ROOT_FOLDERS: ReadonlyArray<RootFolder> = [];
 
 // Free space and import file counts come off the disk, so this list goes stale
 // for reasons the app cannot see. It keeps the client's default staleTime and
@@ -47,7 +47,7 @@ export const useRootFolder = (id: number) => {
 };
 
 const upsertRootFolder = (
-  rootFolders: RootFolder[] = [],
+  rootFolders: ReadonlyArray<RootFolder> = [],
   rootFolder: RootFolder
 ) =>
   rootFolders.some((r) => r.id === rootFolder.id)
@@ -65,7 +65,7 @@ export const useAddRootFolder = () => {
     method: 'POST',
     mutationOptions: {
       onSuccess: (rootFolder) => {
-        queryClient.setQueryData<RootFolder[]>(
+        queryClient.setQueryData<ReadonlyArray<RootFolder>>(
           ROOT_FOLDERS_QUERY_KEY,
           (rootFolders) => upsertRootFolder(rootFolders, rootFolder)
         );
@@ -92,7 +92,7 @@ export const useDeleteRootFolder = (id: number) => {
       // delete, so dropping it here is what removes the row -- same as the
       // slice's remove handler did.
       onSuccess: () => {
-        queryClient.setQueryData<RootFolder[]>(
+        queryClient.setQueryData<ReadonlyArray<RootFolder>>(
           ROOT_FOLDERS_QUERY_KEY,
           (rootFolders) => rootFolders?.filter((r) => r.id !== id)
         );
@@ -121,7 +121,7 @@ export const useRefreshRootFolder = () => {
     method: 'POST',
     mutationOptions: {
       onSuccess: async (rootFolder) => {
-        queryClient.setQueryData<RootFolder[]>(
+        queryClient.setQueryData<ReadonlyArray<RootFolder>>(
           ROOT_FOLDERS_QUERY_KEY,
           (rootFolders) => upsertRootFolder(rootFolders, rootFolder)
         );
