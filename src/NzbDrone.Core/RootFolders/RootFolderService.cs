@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -43,6 +44,8 @@ namespace NzbDrone.Core.RootFolders
         private readonly Logger _logger;
 
         private readonly ICached<string> _cache;
+
+        private static readonly ConcurrentDictionary<int, object> RefreshLocks = new ConcurrentDictionary<int, object>();
 
         private static readonly HashSet<string> SpecialFolders = new HashSet<string>
                                                                  {
@@ -275,6 +278,15 @@ namespace NzbDrone.Core.RootFolders
 
         public RootFolder Refresh(int id, bool includeImportFiles = true)
         {
+            // Keep the scan and reconciliation together: another refresh must see our inserts.
+            lock (RefreshLocks.GetOrAdd(id, _ => new object()))
+            {
+                return RefreshRootFolder(id, includeImportFiles);
+            }
+        }
+
+        private RootFolder RefreshRootFolder(int id, bool includeImportFiles)
+        {
             var rootFolder = Get(id, false);
 
             // We want to make sure we have the latest movie paths in case any have been added or removed since the root folder was loaded
@@ -302,7 +314,10 @@ namespace NzbDrone.Core.RootFolders
 
             var existingUnmappedFiles = _importFileRepository.FindByRootFolderId(id);
 
-            var newUnmappedFiles = mediaFileList.Select(f => new ImportFile
+            var scannedPaths = new HashSet<string>(mediaFileList, PathEqualityComparer.Instance);
+            var existingPaths = new HashSet<string>(existingUnmappedFiles.Select(f => f.Path), PathEqualityComparer.Instance);
+
+            var newUnmappedFiles = scannedPaths.Select(f => new ImportFile
             {
                 RootFolderId = id,
                 Path = f,
@@ -310,8 +325,8 @@ namespace NzbDrone.Core.RootFolders
                 Name = Path.GetFileName(f)
             }).ToList();
 
-            var toAdd = newUnmappedFiles.Where(n => !existingUnmappedFiles.Any(e => e.Path.PathEquals(n.Path))).ToList();
-            var toRemove = existingUnmappedFiles.Where(e => !newUnmappedFiles.Any(n => n.Path.PathEquals(e.Path))).ToList();
+            var toAdd = newUnmappedFiles.Where(n => !existingPaths.Contains(n.Path)).ToList();
+            var toRemove = existingUnmappedFiles.Where(e => !scannedPaths.Contains(e.Path)).ToList();
 
             _logger.ProgressInfo("Scanning Adding {0} new files to the database in {1}", toAdd.Count, importFolder);
             _logger.ProgressInfo("Scanning Cleaning {0} old files from the database in {1}", toRemove.Count, importFolder);
