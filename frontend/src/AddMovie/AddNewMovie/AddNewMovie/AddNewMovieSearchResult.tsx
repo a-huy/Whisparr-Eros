@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import Icon, { IconName } from 'Components/Icon';
+import Icon from 'Components/Icon';
 import Label, { LabelProps } from 'Components/Label';
 import Link from 'Components/Link/Link';
 import TmdbRating from 'Components/TmdbRating';
@@ -11,6 +11,7 @@ import MovieIndexProgressBar from 'Movie/Index/ProgressBar/MovieIndexProgressBar
 import { MovieStatus } from 'Movie/Movie';
 import MovieGenres from 'Movie/MovieGenres';
 import MoviePoster from 'Movie/MoviePoster';
+import PerformerBadges from 'Performer/PerformerBadges';
 import ScenePoster from 'Scene/ScenePoster';
 import StudioLogo from 'Studio/StudioLogo';
 import formatRuntime from 'Utilities/Date/formatRuntime';
@@ -23,34 +24,6 @@ import {
 } from '../useAddNewMovie';
 import AddNewMovieModal from './AddNewMovieModal';
 import styles from './AddNewMovieSearchResult.module.css';
-
-// TODO: Use actual credit type instead
-interface Credit {
-  id?: number | string;
-  name?: string;
-  performer?: {
-    name?: string;
-    gender?: string;
-  };
-  gender?: string;
-}
-
-// TODO: use the GenderIcon component
-function genderToIcon(gender?: string): IconName {
-  switch (gender) {
-    case 'male':
-      return (icons.PERFORMERMALE || icons.PERFORMER) as IconName;
-    case 'female':
-      return (icons.PERFORMERFEMALE || icons.PERFORMER) as IconName;
-    case 'transMale':
-    case 'transFemale':
-    case 'interSex':
-    case 'nonBinary':
-      return (icons.PERFORMERTRANS || icons.PERFORMER) as IconName;
-    default:
-      return icons.PERFORMER as IconName;
-  }
-}
 
 interface AddNewMovieSearchResultProps extends MovieLookupResult {
   colorImpairedMode?: boolean;
@@ -70,6 +43,7 @@ function AddNewMovieSearchResult(props: AddNewMovieSearchResultProps) {
     studioTitle,
     genres,
     searchCredits,
+    performerNames,
     status,
     itemType,
     releaseDate,
@@ -248,22 +222,11 @@ function AddNewMovieSearchResult(props: AddNewMovieSearchResultProps) {
               </Label>
             )}
 
-            {searchCredits && searchCredits.length > 0
-              ? (searchCredits as Credit[]).slice(0, 4).map((credit, index) => {
-                  const performer =
-                    (credit && (credit.performer || credit)) || {};
-                  const name = (performer as Credit).name || credit.name || '';
-                  const gender = (performer as Credit).gender;
-                  const iconName = genderToIcon(gender);
-
-                  return (
-                    <Label key={credit.id || name || index} size={sizes.LARGE}>
-                      <Icon name={iconName} size={13} />
-                      <span className={styles.credits}>{name}</span>
-                    </Label>
-                  );
-                })
-              : null}
+            <PerformerBadges
+              credits={searchCredits}
+              names={performerNames}
+              size={sizes.LARGE}
+            />
 
             {(genres?.length ?? 0) > 0 ? (
               <Label size={sizes.LARGE}>

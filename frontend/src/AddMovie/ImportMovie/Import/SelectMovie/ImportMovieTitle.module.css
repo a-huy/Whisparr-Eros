@@ -17,16 +17,3 @@
 .existing {
   margin-left: 5px;
 }
-
-.performers {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 3px;
-
-  color: var(--disabledColor);
-}
-
-.performerIcon {
-  cursor: default;
-}

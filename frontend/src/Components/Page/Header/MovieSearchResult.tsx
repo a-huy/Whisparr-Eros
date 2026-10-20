@@ -3,6 +3,7 @@ import Icon from 'Components/Icon';
 import Label from 'Components/Label';
 import { icons, kinds, sizes } from 'Helpers/Props';
 import MoviePoster from 'Movie/MoviePoster';
+import PerformerBadges from 'Performer/PerformerBadges';
 import ScenePoster from 'Scene/ScenePoster';
 import { useUiSettingsValues } from 'Settings/UI/useUiSettings';
 import formatRuntime from 'Utilities/Date/formatRuntime';
@@ -12,8 +13,16 @@ import { SuggestedMovie } from './MovieSearchInput';
 import styles from './MovieSearchResult.module.css';
 
 function MovieSearchResult(props: Readonly<SuggestedMovie>) {
-  const { title, year, images, itemType, studioTitle, runtime, releaseDate } =
-    props;
+  const {
+    title,
+    year,
+    images,
+    itemType,
+    studioTitle,
+    runtime,
+    releaseDate,
+    performerNames,
+  } = props;
 
   const { showRelativeDates, shortDateFormat, timeFormat } =
     useUiSettingsValues();
@@ -80,6 +89,10 @@ function MovieSearchResult(props: Readonly<SuggestedMovie>) {
           {runtime ? (
             <div className={styles.runtime}>{formatRuntime(runtime)}</div>
           ) : null}
+        </div>
+
+        <div className={styles.metaRow}>
+          <PerformerBadges names={performerNames} />
         </div>
       </div>
     </div>

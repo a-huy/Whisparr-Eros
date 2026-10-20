@@ -1,0 +1,15 @@
+.performer {
+  composes: label from 'Components/Label.module.css';
+
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  max-width: 100%;
+  white-space: normal;
+}
+
+.name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

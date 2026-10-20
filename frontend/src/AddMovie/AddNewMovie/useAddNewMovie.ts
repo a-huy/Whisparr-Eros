@@ -48,6 +48,7 @@ export interface MovieLookupResult {
   ratings: Ratings;
   genres: string[];
   searchCredits: MovieCredit[];
+  performerNames?: string[];
   studioTitle: string;
   studioForeignId: string;
   folder: string;
