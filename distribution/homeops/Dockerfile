@@ -1,7 +1,7 @@
 FROM ghcr.io/hotio/whisparr:v3@sha256:4edd949338a80cf256cb968ec2127d77023df1b6a2c5248b180773dd91853d20
 ARG REVISION
 ARG VERSION=3.6.5.1888
-LABEL org.opencontainers.image.source="https://gitlab.ahn.io/a-huy/whisparr" \
+LABEL org.opencontainers.image.source="https://github.com/a-huy/Whisparr-Eros" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.version="${VERSION}-homeops" \
       io.homenet.whisparr.fork="true"

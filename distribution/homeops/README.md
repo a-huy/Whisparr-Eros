@@ -1,5 +1,10 @@
 # HomeOps container
 
+Deployment source: https://github.com/a-huy/Whisparr-Eros, branch `homeops/stable`.
+Clone that repository and check out the exact release commit before building;
+record that GitHub URL and commit in `manifest.json` and retain a source archive.
+The GitLab repository is historical and is no longer the deployment source.
+
 This image bundles the fork's backend and frontend. It retains the pinned Hotio Alpine container integration and replaces `/app/bin` with a self-contained `linux-musl-x64` release. No host UI overlay is needed. Built-in automatic updates are disabled; deploy a rebuilt fork image for updates.
 
 From a clean checkout, build the UI with `yarn build`. Publish `src/NzbDrone.Console/Whisparr.Console.csproj` and `src/NzbDrone.Mono/Whisparr.Mono.csproj` using .NET 10, Release, `net10.0`, `linux-musl-x64`, `--self-contained true`, `-p:Platform=Posix`, `-p:AssemblyVersion=3.6.5.1888` and `-p:AssemblyConfiguration=homeops`. Use separate output directories, then merge the Mono output into the Console output and copy `_output/UI` into its `UI/` subdirectory. That combined directory is `bin/` in the Docker build context. Copy `LICENSE.md` into `bin/` as well.
